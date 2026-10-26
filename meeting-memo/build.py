@@ -6,7 +6,9 @@
 - 받은 바로가기(.lnk)·.bat·.ps1 도 "위험한 확장자"로 막힌다. IP 로 연결한 사내 공유 폴더도 인터넷으로 친다.
 - python.org 의 pythonw.exe 는 Python Software Foundation 서명이 있어, 이름을 바꾸고 "인터넷에서 받음"
   표시가 붙어도 통과한다. 그래서 그 파일을 「회의 메모 정리.exe」로 이름만 바꿔 쓴다(아이콘은 못 바꾼다 —
-  바꾸면 서명이 깨진다. 바탕화면 바로가기는 첫 실행 때 이 PC 에서 우리 아이콘으로 만든다).
+  바꾸면 서명이 깨진다).
+- 바탕화면 바로가기는 만들지 않는다 — 첫 실행 때 그 PC 에서 만든 바로가기도 다른 PC 에서 스마트 앱 컨트롤
+  차단이 떴다(2026-10-26). 폴더 안의 exe 를 직접 켜면 막히지 않는다.
 
 다 만들면 GitHub Release `meeting-memo` 의 meeting-memo.zip 을 이 파일로 바꾼다 — 내려받기 주소가 그대로 유지된다.
 """
@@ -19,7 +21,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 PY_URL = "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip"
 PY_SHA256 = "4acbed6dd1c744b0376e3b1cf57ce906f9dc9e95e68824584c8099a63025a3c3"
-NAME = "회의 메모 정리"  # 압축 안 폴더 이름이자 실행 파일 이름 — meeting_memo.PACKAGED_EXE 와 같아야 한다
+NAME = "회의 메모 정리"  # 압축 안 폴더 이름이자 실행 파일 이름
 FILES = ["meeting_memo.py", "sitecustomize.py", "index.html", "AGENTS.md", "CLAUDE.md", "icon.png", "icon.ico"]
 
 

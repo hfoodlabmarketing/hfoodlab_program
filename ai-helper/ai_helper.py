@@ -17,7 +17,6 @@ import platform
 import secrets
 import shutil
 import subprocess
-import sys
 import tarfile
 import threading
 import time
@@ -29,7 +28,6 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SHARED = Path(os.environ["LOCALAPPDATA"]) / "meeting_memo"            # 로그인·Codex 설치(회의 메모 정리와 같이 쓴다)
 DATA = Path(os.environ["LOCALAPPDATA"]) / "ai_helper" / "data.json"   # 프롬프트·확인한 폴더
-PACKAGED_EXE = "AI 작업 도우미.exe"                                    # 배포판의 실행 파일(이름만 바꾼 pythonw.exe)
 KNOWN = {"codex": [Path(os.environ["LOCALAPPDATA"]) / "Programs/OpenAI/Codex/bin/codex.exe",  # 공식 설치 스크립트
                    SHARED / "codex-cli/bin/codex.exe"],                                     # [설치]
          "claude": [Path.home() / ".local/bin/claude.exe"]}
@@ -55,22 +53,30 @@ SEED_PROMPTS = [
     {"title": "문서 맞춤법 검사", "body": "(파일명) 문서의 맞춤법과 띄어쓰기를 고쳐 줘. 고친 곳을 목록으로 알려 줘."},
 ]
 
+# 폴더 선택 창은 이 프로그램 창(AH_OWNER)에 딸린 창으로 띄운다 — 그냥 띄우면 뒤에서 도는 서버가 띄운 창이라
+# 맨 앞으로 못 나오고 프로그램 창 뒤에 숨는다(2026-10-26 실측). 딸린 창은 언제나 주인 창 위에 뜬다.
 PICK_FOLDER = ("[Console]::OutputEncoding = [Text.Encoding]::UTF8; Add-Type -AssemblyName System.Windows.Forms; "
-               "$f = New-Object System.Windows.Forms.Form -Property @{TopMost = $true}; "
+               "$o = New-Object System.Windows.Forms.NativeWindow; "
+               "if ($env:AH_OWNER) { $o.AssignHandle([IntPtr][long]$env:AH_OWNER) }; "
                "$d = New-Object System.Windows.Forms.FolderBrowserDialog -Property @{"
                "Description = 'AI 가 작업할 폴더를 고르세요'; ShowNewFolderButton = $true; SelectedPath = $env:AH_START}; "
-               "if ($d.ShowDialog($f) -eq 'OK') { $d.SelectedPath }")
+               "if ($d.ShowDialog($o) -eq 'OK') { $d.SelectedPath }")
+TITLE = "AI 작업 도우미"  # index.html 의 <title> — Edge 앱 창 제목이 된다
 
 
-def desktop_dir():
-    # OneDrive 로 옮겨진 바탕화면도 찾는다(CSIDL_DESKTOPDIRECTORY)
-    buf = ctypes.create_unicode_buffer(260)
-    if ctypes.windll.shell32.SHGetFolderPathW(None, 0x10, None, 0, buf) == 0:
-        return Path(buf.value)
-    return Path.home() / "Desktop"
+def app_window():
+    """이 프로그램의 Edge 앱 창 핸들(없으면 0)."""
+    user32, found = ctypes.windll.user32, []
 
-
-DESKTOP = desktop_dir()
+    def check(hwnd, _):
+        n = user32.GetWindowTextLengthW(hwnd)
+        buf = ctypes.create_unicode_buffer(n + 1)
+        user32.GetWindowTextW(hwnd, buf, n + 1)
+        if buf.value == TITLE and user32.IsWindowVisible(hwnd):
+            found.append(hwnd)
+        return True
+    user32.EnumWindows(ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)(check), 0)
+    return found[0] if found else 0
 
 
 # ── 도구 찾기·로그인 ──
@@ -252,7 +258,8 @@ def set_folder(data):
 
 def pick_folder(_):
     r = subprocess.run(["powershell", "-NoProfile", "-STA", "-Command", PICK_FOLDER], capture_output=True,
-                       env={**os.environ, "AH_START": load()["folder"]}, creationflags=NO_WINDOW)
+                       env={**os.environ, "AH_START": load()["folder"], "AH_OWNER": str(app_window())},
+                       creationflags=NO_WINDOW)
     return {"path": r.stdout.decode("utf-8", "replace").strip()}
 
 
@@ -474,19 +481,6 @@ class Handler(BaseHTTPRequestHandler):
             self.send(500, {"error": str(e)})
 
 
-def make_shortcut(exe):
-    # 배포판을 처음 켜면 바탕화면 바로가기를 이 PC 에서 만든다 — 받은 .lnk 는 스마트 앱 컨트롤에 막히지만
-    # 이 PC 에서 만든 것은 막히지 않는다. 이미 있으면 건드리지 않는다.
-    lnk = DESKTOP / "AI 작업 도우미.lnk"
-    if lnk.exists():
-        return
-    script = ("$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:MM_LNK); $s.TargetPath = $env:MM_EXE; "
-              "$s.WorkingDirectory = $env:MM_DIR; $s.IconLocation = $env:MM_ICON; $s.Save()")
-    subprocess.run(["powershell", "-NoProfile", "-Command", script], creationflags=NO_WINDOW,
-                   env={**os.environ, "MM_LNK": str(lnk), "MM_EXE": str(exe), "MM_DIR": str(HERE),
-                        "MM_ICON": str(HERE / "icon.ico")})
-
-
 def open_window(url):
     edge = next((p for p in EDGE if Path(p).exists()), None)
     if edge:
@@ -501,8 +495,6 @@ def main():
     Handler.token = secrets.token_urlsafe(16)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     open_window(f"http://{Handler.host}/")
-    if Path(sys.executable).name == PACKAGED_EXE:
-        make_shortcut(Path(sys.executable))
     started = time.time()
     while True:  # 창이 닫히면(bye 뒤 ping 없음) 끝낸다 · 1분 안에 창이 안 뜨거나 12시간 소식이 없어도 끝낸다
         time.sleep(1)

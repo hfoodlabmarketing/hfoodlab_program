@@ -284,7 +284,7 @@ async function api(path, body) {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
-    throw new Error("프로그램이 꺼져 있습니다. 바탕화면 바로가기로 다시 켜 주세요.");
+    throw new Error("프로그램이 꺼져 있습니다. 「회의 메모 정리.exe」를 다시 켜 주세요.");
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `오류 ${res.status}`);

@@ -23,7 +23,7 @@ WHEELS = [  # PyPI 공식 해시
     ("https://files.pythonhosted.org/packages/c1/8b/5fe2cc11fee489817272089c4203e679c63b570a5aaeb18d852ae3cbba6a/"
      "et_xmlfile-2.0.0-py3-none-any.whl", "7a91720bc756843502c3b7504c77b8fe44217c85c537d85037f0f536151b2caa"),
 ]
-NAME = "AI 작업 도우미"  # 압축 안 폴더 이름이자 실행 파일 이름 — ai_helper.PACKAGED_EXE 와 같아야 한다
+NAME = "AI 작업 도우미"  # 압축 안 폴더 이름이자 실행 파일 이름 — sitecustomize.py 의 이름과 같아야 한다
 FILES = ["ai_helper.py", "sitecustomize.py", "index.html", "icon.png", "icon.ico"]
 
 

@@ -18,7 +18,6 @@ import re
 import secrets
 import shutil
 import subprocess
-import sys
 import tarfile
 import threading
 import time
@@ -30,7 +29,6 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent                       # AGENTS.md·CLAUDE.md·index.html 이 있는 작업 폴더
 APPDIR = Path(os.environ["LOCALAPPDATA"]) / "meeting_memo"   # 이 프로그램 전용 로그인
-PACKAGED_EXE = "회의 메모 정리.exe"                            # 배포판의 실행 파일(이름만 바꾼 pythonw.exe)
 KNOWN = {"codex": [Path(os.environ["LOCALAPPDATA"]) / "Programs/OpenAI/Codex/bin/codex.exe",  # 공식 설치 스크립트
                    APPDIR / "codex-cli/bin/codex.exe"],                                     # 이 프로그램의 [설치]
          "claude": [Path.home() / ".local/bin/claude.exe"]}                                  # 둘 다 같은 곳
@@ -316,19 +314,6 @@ class Handler(BaseHTTPRequestHandler):
             self.send(500, {"error": str(e)})
 
 
-def make_shortcut(exe):
-    # 배포판을 처음 켜면 바탕화면 바로가기를 이 PC 에서 만든다 — 받은 .lnk 는 스마트 앱 컨트롤에 막히지만
-    # 이 PC 에서 만든 것은 막히지 않는다. 이미 있으면 건드리지 않는다.
-    lnk = DESKTOP / "회의 메모 정리.lnk"
-    if lnk.exists():
-        return
-    script = ("$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:MM_LNK); $s.TargetPath = $env:MM_EXE; "
-              "$s.WorkingDirectory = $env:MM_DIR; $s.IconLocation = $env:MM_ICON; $s.Save()")
-    subprocess.run(["powershell", "-NoProfile", "-Command", script], creationflags=NO_WINDOW,
-                   env={**os.environ, "MM_LNK": str(lnk), "MM_EXE": str(exe), "MM_DIR": str(HERE),
-                        "MM_ICON": str(HERE / "icon.ico")})
-
-
 def open_window(url):
     edge = next((p for p in EDGE if Path(p).exists()), None)
     if edge:
@@ -343,8 +328,6 @@ def main():
     Handler.token = secrets.token_urlsafe(16)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     open_window(f"http://{Handler.host}/")
-    if Path(sys.executable).name == PACKAGED_EXE:
-        make_shortcut(Path(sys.executable))
     started = time.time()
     while True:  # 창이 닫히면(bye 뒤 ping 없음) 끝낸다 · 1분 안에 창이 안 뜨거나 12시간 소식이 없어도 끝낸다
         time.sleep(1)
