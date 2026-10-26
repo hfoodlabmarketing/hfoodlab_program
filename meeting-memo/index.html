@@ -131,6 +131,8 @@
   .tag[aria-checked="true"] { background: var(--tag-on-bg); color: var(--tag-on-fg); font-weight: 500; }
   .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--text-3); }
   .dot.on { background: var(--green); }
+  .bar { width: 96px; height: 4px; flex: none; border-radius: 2px; background: var(--line); overflow: hidden; }
+  .bar span { display: block; height: 100%; background: var(--blue); transition: width .3s; }
   .muted { color: var(--text-2); }
   .acct, .file { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .link { padding: 2px 6px; border-radius: 4px; font-size: 14px; color: var(--text-2); white-space: nowrap; }
@@ -185,7 +187,7 @@
     .toast { bottom: calc(76px + env(safe-area-inset-bottom)); }
   }
   @media (prefers-reduced-motion: reduce) {
-    .toast, .topbar { transition: none; }
+    .toast, .topbar, .bar span { transition: none; }
     .spin { animation-duration: 1.6s; }
   }
 </style>
@@ -269,7 +271,6 @@ let state = {};                  // 도구마다 {installed, connected, account,
 let engine = "codex";
 let connecting = null;           // [연결] 을 누르고 로그인을 기다리는 도구
 let installing = null;           // [설치] 를 누르고 설치를 기다리는 도구
-let installStarted = 0;          // 설치를 누른 시각 — 걸린 시간을 보여 줘 멈춘 게 아니란 걸 알게 한다
 let mid = crypto.randomUUID();   // 회의 하나 — 같은 회의는 같은 파일을 덮는다
 let summarized = null;           // 마지막으로 정리 파일을 만든 메모
 let busy = false, firstStatus = true, pollTimer = 0, toastTimer = 0;
@@ -301,9 +302,15 @@ function render() {
   let html;
   if (!s) html = `<span class="muted">확인하는 중…</span>`;
   else if (!s.installed && s.installing) {
-    const sec = Math.round((Date.now() - installStarted) / 1000);
-    const took = !installStarted ? "" : sec < 60 ? ` ${sec}초` : ` ${Math.floor(sec / 60)}분 ${sec % 60}초`;
-    html = `<span class="spin"></span><span>설치하는 중…${took} (1~2분 걸릴 수 있습니다)</span>`;
+    const p = s.progress || {};
+    if (p.step === "받는 중" && p.total) {
+      const pct = Math.floor(p.done / p.total * 100);
+      html = `<span class="bar"><span style="width:${pct}%"></span></span>` +
+        `<span>받는 중 ${Math.round(p.done / 1e6)} / ${Math.round(p.total / 1e6)}MB (${pct}%) · ` +
+        `${(p.done / 1e6 / Math.max(p.secs, 0.1)).toFixed(1)}MB/s</span>`;
+    } else {
+      html = `<span class="spin"></span><span>${p.step || "준비 중"}…</span>`;
+    }
   }
   else if (!s.installed) html = `<span class="muted">이 PC에 없습니다</span><button type="button" class="link blue" data-act="install">설치</button>`;
   else if (s.pending) html = `<span class="spin"></span><span>브라우저에서 로그인을 마쳐 주세요</span>`;
@@ -327,12 +334,14 @@ function applyStatus(next) {
   }
   if (installing && !state[installing]?.installing) {
     if (state[installing]?.installed) { engine = installing; toast(`${NAMES[installing]} 설치했습니다. [연결]을 눌러 로그인하세요`); }
-    else toast("설치가 끝나지 않았습니다. 설치 창의 안내를 확인해 주세요");
+    else showCallout(state[installing]?.progress?.error || "설치가 끝나지 않았습니다. 다시 눌러 주세요.");
     installing = null;
   }
   render();
   clearTimeout(pollTimer);
-  if (Object.values(state).some((s) => s.pending || s.installing)) pollTimer = setTimeout(refresh, 2000);
+  const waiting = Object.values(state);
+  if (waiting.some((s) => s.installing)) pollTimer = setTimeout(refresh, 1000);   // 진행률은 1초마다
+  else if (waiting.some((s) => s.pending)) pollTimer = setTimeout(refresh, 2000);
 }
 const refresh = () => api("/api/status").then(applyStatus).catch((e) => showCallout(e.message));
 
@@ -439,7 +448,6 @@ $("account").addEventListener("click", async (e) => {
       applyStatus(await api("/api/connect", { engine: target }));
     } else if (act === "install") {
       installing = target;
-      installStarted = Date.now();
       state[target] = { ...state[target], installing: true };
       render();
       applyStatus(await api("/api/install", { engine: target }));

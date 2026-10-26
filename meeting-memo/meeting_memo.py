@@ -10,15 +10,19 @@
 - 배포판은 build.py 가 만든다(파이썬 동봉 · 「회의 메모 정리.exe」 더블클릭). 왜 그렇게 나눠 주는지는 build.py 머리말.
 """
 import ctypes
+import hashlib
 import json
 import os
+import platform
 import re
 import secrets
 import shutil
 import subprocess
 import sys
+import tarfile
 import threading
 import time
+import urllib.request
 import webbrowser
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -27,10 +31,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent                       # AGENTS.md·CLAUDE.md·index.html 이 있는 작업 폴더
 APPDIR = Path(os.environ["LOCALAPPDATA"]) / "meeting_memo"   # 이 프로그램 전용 로그인
 PACKAGED_EXE = "회의 메모 정리.exe"                            # 배포판의 실행 파일(이름만 바꾼 pythonw.exe)
-KNOWN = {"codex": Path(os.environ["LOCALAPPDATA"]) / "Programs/OpenAI/Codex/bin/codex.exe",
-         "claude": Path.home() / ".local/bin/claude.exe"}     # 공식 설치 스크립트가 까는 곳
-INSTALL = {"codex": "irm https://chatgpt.com/codex/install.ps1 | iex",
-           "claude": "irm https://claude.ai/install.ps1 | iex"}  # 두 회사의 공식 설치 명령
+KNOWN = {"codex": [Path(os.environ["LOCALAPPDATA"]) / "Programs/OpenAI/Codex/bin/codex.exe",  # 공식 설치 스크립트
+                   APPDIR / "codex-cli/bin/codex.exe"],                                     # 이 프로그램의 [설치]
+         "claude": [Path.home() / ".local/bin/claude.exe"]}                                  # 둘 다 같은 곳
 MODELS = {"codex": "gpt-6.1-sol", "claude": "claude-opus-5-5"}
 ENGINES = {"codex": "GPT-6.1-Sol (Codex)", "claude": "Claude Opus 5.5 (Claude Code)"}
 HOME_VAR = {"codex": "CODEX_HOME", "claude": "CLAUDE_CONFIG_DIR"}
@@ -73,8 +76,7 @@ def env_for(engine):
 
 def find_exe(engine):
     # 방금 [설치] 로 깔았으면 이 프로세스의 PATH 에는 아직 없다 — 설치 위치를 직접 본다
-    found = shutil.which(engine)
-    return found or (str(KNOWN[engine]) if KNOWN[engine].exists() else None)
+    return shutil.which(engine) or next((str(p) for p in KNOWN[engine] if p.exists()), None)
 
 
 def cli(engine, args, **kw):
@@ -115,7 +117,8 @@ def summarize(engine, title, when, memo):
 
 # ── 화면이 부르는 일들 ──
 PENDING = set()     # 로그인 창이 떠 있는 도구
-INSTALLING = set()  # 설치 창이 떠 있는 도구
+INSTALLING = set()  # 설치하고 있는 도구
+PROGRESS = {}       # 도구마다 설치 진행 {"step", "done", "total", "secs"} · 실패하면 {"error"}
 PATHS = {}          # 회의(mid)마다 저장한 파일 — 다시 생성하면 같은 파일을 덮고, 제목·날짜가 바뀌면 이름을 바꾼다
 
 
@@ -123,7 +126,7 @@ def status(_=None):
     out = {}
     for engine in ENGINES:
         if not find_exe(engine):
-            out[engine] = {"installed": False, "installing": engine in INSTALLING}
+            out[engine] = {"installed": False, "installing": engine in INSTALLING, "progress": PROGRESS.get(engine)}
             continue
         acct = login_info(engine)
         out[engine] = {"installed": True, "connected": acct is not None, "account": acct or "",
@@ -150,22 +153,75 @@ def disconnect(data):
     return status()
 
 
+# [설치]는 공식 PowerShell 설치 스크립트를 띄우지 않고 직접 받는다. 그 스크립트는 1분 넘게 아무것도 찍지 않고,
+# 어떤 PC 에서는 6분 넘게 받았다(같은 사무실의 다른 PC 는 3초, 2026-10-26). 직접 받으면 진행률을 화면에
+# 보여 줄 수 있다. 받는 곳·체크섬·마무리는 공식 스크립트와 같다.
+def get(url, timeout=30):
+    # releases.openai.com 은 파이썬 기본 User-Agent(Python-urllib)를 403 으로 막는다
+    return urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "meeting-memo"}), timeout=timeout)
+
+
+def fetch(url, dest, engine):
+    """받으면서 진행률을 PROGRESS 에 적고, 받은 파일의 sha256 을 돌려준다."""
+    digest, done, started = hashlib.sha256(), 0, time.time()
+    with get(url, timeout=60) as r, open(dest, "wb") as f:
+        total = int(r.headers.get("Content-Length") or 0)
+        while chunk := r.read(1 << 20):
+            f.write(chunk)
+            digest.update(chunk)
+            done += len(chunk)
+            PROGRESS[engine] = {"step": "받는 중", "done": done, "total": total, "secs": time.time() - started}
+    return digest.hexdigest()
+
+
+def install_codex():
+    arch = "aarch64" if platform.machine() == "ARM64" else "x86_64"
+    meta = json.load(get("https://releases.openai.com/codex/channels/latest"))
+    asset = next(a for a in meta["assets"] if a["name"] == f"codex-package-{arch}-pc-windows-msvc.tar.gz")
+    archive = APPDIR / asset["name"]
+    if "sha256:" + fetch(asset["browser_download_url"], archive, "codex") != asset["digest"]:
+        raise RuntimeError("받은 파일이 공식 체크섬과 다릅니다. 다시 눌러 주세요.")
+    PROGRESS["codex"] = {"step": "푸는 중"}
+    dest = KNOWN["codex"][1].parent.parent
+    shutil.rmtree(dest, ignore_errors=True)
+    with tarfile.open(archive) as t:
+        t.extractall(dest, filter="data")
+    archive.unlink()
+
+
+def install_claude():
+    base = "https://downloads.claude.ai/claude-code-releases"
+    plat = "win32-arm64" if platform.machine() == "ARM64" else "win32-x64"
+    version = get(f"{base}/latest").read().decode().strip()
+    manifest = json.load(get(f"{base}/{version}/manifest.json"))
+    exe = APPDIR / "claude-download.exe"
+    if fetch(f"{base}/{version}/{plat}/claude.exe", exe, "claude") != manifest["platforms"][plat]["checksum"]:
+        raise RuntimeError("받은 파일이 공식 체크섬과 다릅니다. 다시 눌러 주세요.")
+    PROGRESS["claude"] = {"step": "설치하는 중"}
+    r = subprocess.run([str(exe), "install"], capture_output=True, timeout=300, creationflags=NO_WINDOW)
+    time.sleep(1)  # 공식 스크립트처럼 파일이 놓일 때까지 잠깐 기다렸다 지운다
+    exe.unlink(missing_ok=True)
+    if r.returncode != 0:
+        lines = (r.stderr + r.stdout).decode("utf-8", "replace").strip().splitlines()
+        raise RuntimeError(lines[-1] if lines else f"종료 코드 {r.returncode}")
+
+
+INSTALLERS = {"codex": install_codex, "claude": install_claude}
+
+
 def install(data):
     engine = data["engine"]
     if engine not in INSTALLING and not find_exe(engine):
         INSTALLING.add(engine)
+        PROGRESS[engine] = {"step": "준비 중"}
 
         def run():
-            # 설치 과정이 보이게 창을 띄우고, 끝나면 Enter 로 닫게 한다. 공식 스크립트는 받고 버전을 찾는
-            # 1분 남짓 아무것도 찍지 않아 멈춘 것처럼 보인다 — 안내를 먼저 찍는다.
-            # CODEX_NON_INTERACTIVE: 끝에 묻는 "Start Codex now? [y/N]" 를 건너뛴다(공식 스크립트 설정)
-            note = ("$Host.UI.RawUI.WindowTitle = '회의 메모 정리 - 설치 중'; "
-                    "Write-Host '설치 파일을 받는 중입니다. 1~2분 걸릴 수 있으니 창을 닫지 말고 기다려 주세요...' "
-                    "-ForegroundColor Cyan; ")
             try:
-                subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
-                                note + INSTALL[engine] + "; Read-Host '설치가 끝났습니다. Enter 를 누르면 창이 닫힙니다'"],
-                               env={**os.environ, "CODEX_NON_INTERACTIVE": "1"}, creationflags=NEW_CONSOLE)
+                APPDIR.mkdir(parents=True, exist_ok=True)
+                INSTALLERS[engine]()
+                PROGRESS.pop(engine, None)
+            except Exception as e:
+                PROGRESS[engine] = {"error": f"설치하지 못했습니다. {e}"}
             finally:
                 INSTALLING.discard(engine)
         threading.Thread(target=run, daemon=True).start()
