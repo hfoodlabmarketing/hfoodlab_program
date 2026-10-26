@@ -156,10 +156,16 @@ def install(data):
         INSTALLING.add(engine)
 
         def run():
-            try:  # 설치 과정이 보이게 창을 띄우고, 끝나면 Enter 로 닫게 한다
+            # 설치 과정이 보이게 창을 띄우고, 끝나면 Enter 로 닫게 한다. 공식 스크립트는 받고 버전을 찾는
+            # 1분 남짓 아무것도 찍지 않아 멈춘 것처럼 보인다 — 안내를 먼저 찍는다.
+            # CODEX_NON_INTERACTIVE: 끝에 묻는 "Start Codex now? [y/N]" 를 건너뛴다(공식 스크립트 설정)
+            note = ("$Host.UI.RawUI.WindowTitle = '회의 메모 정리 - 설치 중'; "
+                    "Write-Host '설치 파일을 받는 중입니다. 1~2분 걸릴 수 있으니 창을 닫지 말고 기다려 주세요...' "
+                    "-ForegroundColor Cyan; ")
+            try:
                 subprocess.run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
-                                INSTALL[engine] + "; Read-Host '설치가 끝났습니다. Enter 를 누르면 창이 닫힙니다'"],
-                               creationflags=NEW_CONSOLE)
+                                note + INSTALL[engine] + "; Read-Host '설치가 끝났습니다. Enter 를 누르면 창이 닫힙니다'"],
+                               env={**os.environ, "CODEX_NON_INTERACTIVE": "1"}, creationflags=NEW_CONSOLE)
             finally:
                 INSTALLING.discard(engine)
         threading.Thread(target=run, daemon=True).start()
