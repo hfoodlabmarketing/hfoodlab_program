@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AI 작업 도우미</title>
+<link rel="icon" href="/icon.png">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+<style>
+  /* 노션 페이지를 따른다 — 색은 노션 라이트/다크 값(회의 메모 정리와 같은 틀) */
+  :root {
+    color-scheme: light;
+    --bg: #ffffff;
+    --side-bg: #f7f7f5;
+    --text: #37352f;
+    --text-2: #787774;
+    --text-3: #b4b4b0;
+    --line: #e9e9e7;
+    --line-strong: rgba(55, 53, 47, .16);
+    --hover: rgba(55, 53, 47, .06);
+    --press: rgba(55, 53, 47, .12);
+    --blue: #2383e2;
+    --blue-hover: #0077d4;
+    --blue-soft: rgba(35, 131, 226, .12);
+    --ring: rgba(35, 131, 226, .45);
+    --green: #448361;
+    --red: #d44c47;
+    --red-soft: rgba(212, 76, 71, .1);
+    --tag-on-bg: #d3e5ef;
+    --tag-on-fg: #183347;
+    --tag-off-bg: #f1f1ef;
+    --tag-off-fg: #5a5955;
+    --user-bg: #f1f1ef;
+    --callout-bg: #fdebec;
+    --callout-fg: #5d1715;
+    --toast-bg: #2f2f2f;
+    --toast-fg: #ffffff;
+    --panel: #ffffff;
+    --shadow: 0 0 0 1px rgba(15, 15, 15, .05), 0 3px 6px rgba(15, 15, 15, .1), 0 9px 24px rgba(15, 15, 15, .2);
+    --shadow-sm: 0 1px 2px rgba(15, 15, 15, .06), 0 4px 12px rgba(15, 15, 15, .06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #191919;
+      --side-bg: #202020;
+      --text: #d4d4d4;
+      --text-2: #9b9b9b;
+      --text-3: #5f5f5f;
+      --line: #2f2f2f;
+      --line-strong: rgba(255, 255, 255, .13);
+      --hover: rgba(255, 255, 255, .055);
+      --press: rgba(255, 255, 255, .1);
+      --blue-soft: rgba(35, 131, 226, .2);
+      --green: #529e72;
+      --red: #e16259;
+      --red-soft: rgba(225, 98, 89, .15);
+      --tag-on-bg: #28456c;
+      --tag-on-fg: #e1ecf7;
+      --tag-off-bg: #2f2f2f;
+      --tag-off-fg: #b4b4b4;
+      --user-bg: #2a2a2a;
+      --callout-bg: #362422;
+      --callout-fg: #f0c8c5;
+      --toast-bg: #3f3f3f;
+      --toast-fg: #f1f1f1;
+      --panel: #252525;
+      --shadow: 0 0 0 1px rgba(15, 15, 15, .1), 0 3px 6px rgba(15, 15, 15, .2), 0 9px 24px rgba(15, 15, 15, .4);
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 12px rgba(0, 0, 0, .25);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body {
+    font: 16px/1.5 "Pretendard Variable", Pretendard, ui-sans-serif, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; border: 0; background: none; padding: 0; }
+  button:disabled { cursor: default; }
+  :focus-visible { outline: none; box-shadow: 0 0 0 2px var(--ring); border-radius: 4px; }
+  .composer textarea:focus-visible, .prop-value input:focus-visible { box-shadow: none; }  /* 글 쓰는 칸은 커서로 충분하다 */
+  [hidden] { display: none !important; }
+
+  .app { display: flex; min-height: 100vh; }
+
+  /* 왼쪽 — 프롬프트 */
+  .sidebar {
+    position: sticky; top: 0; flex: none; width: 248px; height: 100vh; overflow-y: auto;
+    padding: 10px 8px; background: var(--side-bg); font-size: 14px;
+  }
+  .side-head { display: flex; align-items: center; gap: 8px; padding: 6px 8px 14px; font-weight: 600; }
+  .side-head img { width: 22px; height: 22px; }
+  .side-title { display: flex; align-items: center; justify-content: space-between; padding: 4px 4px 4px 8px; color: var(--text-2); font-size: 12px; font-weight: 500; }
+  .icon-btn { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 6px; color: var(--text-2); font-size: 16px; }
+  .icon-btn:hover { background: var(--hover); }
+  .prompt-list { list-style: none; margin: 0; padding: 0; }
+  .prompt-list li { display: flex; align-items: center; border-radius: 6px; }
+  .prompt-list li:hover { background: var(--hover); }
+  .p-item { flex: 1; min-width: 0; padding: 5px 8px; text-align: left; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .p-more { width: 26px; height: 26px; flex: none; border-radius: 6px; color: var(--text-2); opacity: 0; }
+  .prompt-list li:hover .p-more, .p-more:focus-visible { opacity: 1; }
+  .p-more:hover { background: var(--press); }
+  .side-hint { margin: 8px; color: var(--text-3); font-size: 12px; }
+  .side-empty { margin: 4px 8px; color: var(--text-2); font-size: 13px; }
+
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+  /* 상단 띠 */
+  .topbar {
+    position: sticky; top: 0; z-index: 10;
+    display: flex; align-items: center; gap: 8px;
+    height: 45px; padding: 0 12px; background: var(--bg);
+    transition: box-shadow .15s;
+  }
+  .topbar.scrolled { box-shadow: 0 1px 0 var(--line); }
+  .menu { display: none; }
+  .crumbs { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 14px; }
+  .crumbs .sep { color: var(--text-3); }
+  .crumbs .cur { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .actions { margin-left: auto; display: flex; gap: 4px; flex: none; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    height: 28px; padding: 0 10px; border-radius: 6px; font-size: 14px; white-space: nowrap;
+  }
+  .btn-ghost:hover:not(:disabled) { background: var(--hover); }
+  .btn-ghost:active:not(:disabled) { background: var(--press); }
+  .btn-ghost:disabled { opacity: .4; }
+  .btn-primary { background: var(--blue); color: #fff; font-weight: 500; }
+  .btn-primary:hover:not(:disabled) { background: var(--blue-hover); }
+  .btn-primary:disabled { opacity: .45; }
+  .btn-stop { background: var(--red-soft); color: var(--red); font-weight: 500; }
+
+  /* 페이지 */
+  .page { width: 100%; max-width: 900px; margin: 0 auto; padding: 0 96px 24px; flex: 1; }
+  .page-icon { display: block; width: 72px; height: 72px; margin: 56px 0 10px; }
+  .title { margin: 0 0 14px; padding: 3px 2px; font-size: 40px; line-height: 1.2; font-weight: 700; letter-spacing: -.01em; }
+
+  .prop { display: grid; grid-template-columns: 160px minmax(0, 1fr); align-items: start; }
+  .prop-name { display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 6px; color: var(--text-2); font-size: 14px; }
+  .prop-name svg { width: 16px; height: 16px; flex: none; }
+  .prop-value {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    min-height: 34px; padding: 4px 8px; border-radius: 4px; font-size: 14px; min-width: 0;
+  }
+  .prop-value.editable:hover { background: var(--hover); }
+  .prop-value input { flex: 1; min-width: 0; padding: 0; border: 0; outline: 0; background: none; font-size: 14px; }
+  .prop-value input::placeholder { color: var(--text-3); }
+  .prop-value input:disabled { color: var(--text-2); }
+  .tag {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 24px; padding: 0 8px; border-radius: 4px; font-size: 14px;
+    background: var(--tag-off-bg); color: var(--tag-off-fg);
+  }
+  .tag[aria-checked="true"] { background: var(--tag-on-bg); color: var(--tag-on-fg); font-weight: 500; }
+  .tag:disabled { opacity: .55; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--text-3); }
+  .dot.on { background: var(--green); }
+  .bar { width: 96px; height: 4px; flex: none; border-radius: 2px; background: var(--line); overflow: hidden; }
+  .bar span { display: block; height: 100%; background: var(--blue); transition: width .3s; }
+  .muted { color: var(--text-2); }
+  .acct { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .link { padding: 2px 6px; border-radius: 4px; font-size: 14px; color: var(--text-2); white-space: nowrap; }
+  .link:hover:not(:disabled) { background: var(--hover); }
+  .link.blue { color: var(--blue); }
+  .link:disabled { opacity: .4; }
+  .lock-note { margin: 6px 0 0 6px; color: var(--text-2); font-size: 13px; }
+
+  .callout {
+    display: flex; gap: 10px; margin: 10px 0 0; padding: 14px 16px 14px 12px;
+    border-radius: 6px; background: var(--callout-bg); color: var(--callout-fg); font-size: 15px;
+  }
+  .callout svg { width: 20px; height: 20px; flex: none; margin-top: 1px; }
+  .divider { height: 1px; margin: 14px 0 20px; background: var(--line); }
+
+  /* 대화 */
+  .thread { display: flex; flex-direction: column; gap: 22px; }
+  .empty { color: var(--text-2); font-size: 15px; line-height: 1.7; }
+  .msg-user {
+    align-self: flex-end; max-width: 85%; padding: 8px 12px; border-radius: 12px;
+    background: var(--user-bg); white-space: pre-wrap; overflow-wrap: anywhere;
+  }
+  .who { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; color: var(--text-2); font-size: 13px; }
+  .who img { width: 18px; height: 18px; }
+  .acts { display: grid; gap: 3px; margin: 2px 0 10px; }
+  .act { display: flex; align-items: baseline; gap: 8px; min-width: 0; color: var(--text-2); font-size: 13px; }
+  .act .k { flex: none; padding: 0 6px; border-radius: 4px; background: var(--tag-off-bg); font-size: 12px; }
+  .act .k.change { background: var(--blue-soft); color: var(--blue); }
+  .act .k.bad { background: var(--red-soft); color: var(--red); }
+  .act .t { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .md { font-size: 15px; line-height: 1.7; overflow-wrap: anywhere; }
+  .md > :first-child { margin-top: 0; }
+  .md > :last-child { margin-bottom: 0; }
+  .md p { margin: 0 0 10px; }
+  .md ul, .md ol { margin: 0 0 10px; padding-left: 22px; }
+  .md h1, .md h2, .md h3 { margin: 18px 0 8px; font-size: 17px; line-height: 1.4; }
+  .md table { border-collapse: collapse; margin: 0 0 10px; font-size: 14px; display: block; overflow-x: auto; }
+  .md th, .md td { padding: 5px 9px; border: 1px solid var(--line); text-align: left; }
+  .md th { background: var(--side-bg); font-weight: 600; }
+  .md code { padding: 1px 5px; border-radius: 4px; background: var(--tag-off-bg); font-size: 13px; }
+  .md pre { padding: 10px 12px; border-radius: 6px; background: var(--tag-off-bg); overflow-x: auto; }
+  .md pre code { padding: 0; background: none; }
+  .err { margin-top: 6px; color: var(--red); font-size: 14px; }
+  .working { display: flex; align-items: center; gap: 8px; margin-top: 4px; color: var(--text-2); font-size: 14px; }
+  .msg-tools { margin-top: 6px; }
+
+  /* 입력 칸 */
+  .composer-wrap {
+    position: sticky; bottom: 0; z-index: 5; width: 100%; max-width: 900px; margin: 0 auto;
+    padding: 18px 96px calc(20px + env(safe-area-inset-bottom));
+    background: linear-gradient(to bottom, transparent, var(--bg) 18px);
+  }
+  .composer {
+    display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 8px 14px;
+    border: 1px solid var(--line-strong); border-radius: 12px; background: var(--bg); box-shadow: var(--shadow-sm);
+  }
+  .composer textarea {
+    flex: 1; max-height: 220px; padding: 4px 0; border: 0; outline: 0; resize: none; background: none;
+    font-size: 15px; line-height: 1.5; overflow-y: hidden;
+  }
+  .composer-hint { margin: 6px 4px 0; color: var(--text-3); font-size: 12px; }
+  .composer textarea::placeholder { color: var(--text-3); }
+  .composer .btn { height: 32px; padding: 0 14px; }
+
+  .spin {
+    width: 14px; height: 14px; flex: none; border-radius: 50%;
+    border: 2px solid currentColor; border-right-color: transparent;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 96px; z-index: 30;
+    max-width: calc(100% - 32px); padding: 8px 14px; border-radius: 6px;
+    background: var(--toast-bg); color: var(--toast-fg); font-size: 14px; box-shadow: var(--shadow);
+    opacity: 0; transform: translate(-50%, 8px); pointer-events: none;
+    transition: opacity .16s, transform .16s;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  .modal-bg { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 16px; background: rgba(15, 15, 15, .6); }
+  .modal { width: min(380px, 100%); padding: 22px 20px 16px; border-radius: 10px; background: var(--panel); box-shadow: var(--shadow); }
+  .modal p { margin: 0 0 18px; font-size: 14px; line-height: 1.6; white-space: pre-line; text-align: center; overflow-wrap: anywhere; }
+  .modal-actions { display: grid; gap: 8px; }
+  .modal-actions button { height: 32px; border-radius: 6px; font-size: 14px; }
+  .btn-danger { border: 1px solid rgba(235, 87, 87, .5); color: var(--red); }
+  .btn-danger:hover { background: rgba(235, 87, 87, .1); }
+  .btn-ok { background: var(--blue); color: #fff; font-weight: 500; }
+  .btn-ok:hover { background: var(--blue-hover); }
+  .modal-actions .btn-ghost { border: 1px solid var(--line); }
+  .modal.wide { width: min(520px, 100%); }
+  .modal label { display: block; margin: 0 0 4px; color: var(--text-2); font-size: 13px; }
+  .modal input, .modal textarea {
+    width: 100%; margin: 0 0 12px; padding: 7px 9px; border: 1px solid var(--line-strong); border-radius: 6px;
+    background: var(--bg); font-size: 14px; outline: 0;
+  }
+  .modal input:focus, .modal textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 2px var(--ring); }
+  .modal textarea { min-height: 160px; resize: vertical; line-height: 1.55; }
+  .modal-row { display: flex; gap: 8px; justify-content: flex-end; }
+  .modal-row .spacer { flex: 1; }
+  .modal-row button { height: 32px; padding: 0 14px; border-radius: 6px; font-size: 14px; }
+
+  .scrim { position: fixed; inset: 0; z-index: 19; background: rgba(15, 15, 15, .4); }
+
+  @media (max-width: 900px) {
+    .menu { display: inline-grid; }
+    .sidebar {
+      position: fixed; left: 0; top: 0; bottom: 0; z-index: 20; height: auto;
+      box-shadow: var(--shadow); transform: translateX(-105%); transition: transform .2s;
+    }
+    .sidebar.open { transform: none; }
+    .page { padding: 0 48px 24px; }
+    .composer-wrap { padding-left: 48px; padding-right: 48px; }
+  }
+  @media (max-width: 600px) {
+    .page { padding: 0 16px 16px; }
+    .composer-wrap { padding-left: 16px; padding-right: 16px; }
+    .page-icon { width: 52px; height: 52px; margin-top: 24px; }
+    .composer-hint { display: none; }
+    .title { font-size: 28px; }
+    .prop { grid-template-columns: 96px minmax(0, 1fr); }
+    .prop-name { padding: 0 4px; }
+    .crumbs .crumb-app, .crumbs .sep { display: none; }
+    .p-more { opacity: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .toast, .topbar, .sidebar, .bar span { transition: none; }
+    .spin { animation-duration: 1.6s; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" id="sidebar" aria-label="프롬프트">
+    <div class="side-head"><img src="/icon.png" alt="">AI 작업 도우미</div>
+    <div class="side-title">
+      <span>프롬프트</span>
+      <button type="button" class="icon-btn" id="add-prompt" aria-label="프롬프트 추가" title="프롬프트 추가">+</button>
+    </div>
+    <ul class="prompt-list" id="prompts"></ul>
+    <p class="side-hint">누르면 아래 입력 칸에 들어갑니다</p>
+  </aside>
+  <div class="scrim" id="scrim" hidden></div>
+
+  <div class="main">
+    <header class="topbar" id="topbar">
+      <button type="button" class="icon-btn menu" id="menu" aria-label="프롬프트 목록 열기">☰</button>
+      <div class="crumbs">
+        <span class="crumb-app">AI 작업 도우미</span>
+        <span class="sep">/</span>
+        <span class="cur" id="crumb">새 대화</span>
+      </div>
+      <div class="actions"><button type="button" class="btn btn-ghost" id="new">새 대화</button></div>
+    </header>
+
+    <main class="page">
+      <img class="page-icon" src="/icon.png" alt="">
+      <h1 class="title">무엇을 도와드릴까요?</h1>
+
+      <div class="props">
+        <div class="prop">
+          <div class="prop-name">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M1.8 4.2c0-.7.5-1.2 1.2-1.2h3.1l1.4 1.6H13c.7 0 1.2.5 1.2 1.2v6.5c0 .7-.5 1.2-1.2 1.2H3c-.7 0-1.2-.5-1.2-1.2z"/></svg>
+            작업 폴더
+          </div>
+          <div class="prop-value editable">
+            <input id="folder" placeholder="폴더 경로를 붙여 넣거나 [찾아보기]" aria-label="작업 폴더" spellcheck="false">
+            <button type="button" class="link blue" id="pick">찾아보기</button>
+          </div>
+        </div>
+        <div class="prop">
+          <div class="prop-name">
+            <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.5l1.5 5 5 1.5-5 1.5-1.5 5-1.5-5-5-1.5 5-1.5z"/></svg>
+            AI
+          </div>
+          <div class="prop-value" id="engines" role="radiogroup" aria-label="AI"></div>
+        </div>
+        <div class="prop">
+          <div class="prop-name">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="8" cy="5.5" r="2.8"/><path d="M2.5 14c.6-2.8 2.8-4.3 5.5-4.3s4.9 1.5 5.5 4.3"/></svg>
+            계정
+          </div>
+          <div class="prop-value" id="account"></div>
+        </div>
+      </div>
+      <p class="lock-note" id="lock-note" hidden>대화 중에는 폴더와 AI를 바꿀 수 없습니다. [새 대화]에서 바꿔 주세요.</p>
+
+      <div class="callout" id="callout" role="alert" hidden>
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="10" cy="10" r="8"/><path d="M10 6v5M10 13.6v.4"/></svg>
+        <div id="callout-text"></div>
+      </div>
+      <div class="divider"></div>
+      <div class="thread" id="thread" aria-live="polite"></div>
+    </main>
+
+    <div class="composer-wrap">
+      <div class="composer">
+        <textarea id="input" rows="1" placeholder="AI에게 시킬 일을 적으세요" aria-label="시킬 일"></textarea>
+        <button type="button" class="btn btn-primary" id="send">보내기</button>
+      </div>
+      <p class="composer-hint">Enter 보내기 · Shift+Enter 줄바꿈</p>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<div class="modal-bg" id="modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-text">
+    <p id="modal-text"></p>
+    <div class="modal-actions">
+      <button type="button" id="modal-ok"></button>
+      <button type="button" class="btn-ghost" id="modal-cancel">취소</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="pmodal" hidden>
+  <div class="modal wide" role="dialog" aria-modal="true" aria-label="프롬프트">
+    <label for="p-title">이름</label>
+    <input id="p-title" placeholder="예: 엑셀 정리">
+    <label for="p-body">내용</label>
+    <textarea id="p-body" placeholder="AI에게 시킬 일을 적어 두세요. (파일명)처럼 바꿔 쓸 자리를 남겨 두면 편합니다."></textarea>
+    <div class="modal-row">
+      <button type="button" class="btn-danger" id="p-delete">삭제</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn-ghost" id="p-cancel">취소</button>
+      <button type="button" class="btn-ok" id="p-save">저장</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const TOKEN = "__TOKEN__";
+const NAMES = { codex: "GPT-6.1-Sol", claude: "Claude Opus 5.5" };
+const ACCOUNT = { codex: "ChatGPT 계정", claude: "Claude 계정" };
+const CHANGE = ["고침", "만듦", "지움"];
+const $ = (id) => document.getElementById(id);
+const folderEl = $("folder"), inputEl = $("input");
+
+let state = {};                  // 도구마다 {installed, connected, account, pending, installing, progress}
+let engine = "codex";
+let connecting = null, installing = null;
+let data = { prompts: [], confirmed: [], folder: "" };   // 이 PC 에 저장된 프롬프트·폴더
+let chatId = crypto.randomUUID();
+let chat = { messages: [], running: false };
+let editing = null;              // 고치고 있는 프롬프트 번호(새로 만들면 -1)
+let firstStatus = true, pollTimer = 0, chatTimer = 0, toastTimer = 0;
+
+async function api(path, body) {
+  let res;
+  try {
+    res = await fetch(path, {
+      method: body === undefined ? "GET" : "POST",
+      headers: { "X-Token": TOKEN, "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch {
+    throw new Error("프로그램이 꺼져 있습니다. 바탕화면 바로가기로 다시 켜 주세요.");
+  }
+  const result = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(result.error || `오류 ${res.status}`);
+  return result;
+}
+
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const started = () => chat.messages.length > 0;
+function markdown(text) {
+  if (window.marked && window.DOMPurify) return DOMPurify.sanitize(marked.parse(text));
+  return esc(text).replace(/\n/g, "<br>");   // 인터넷이 안 되면 글 그대로
+}
+
+/* ── AI 고르기·계정 ── */
+function renderEngines() {
+  const locked = started();
+  $("engines").innerHTML = Object.keys(NAMES).map((k) =>
+    `<button type="button" class="tag" role="radio" aria-checked="${k === engine}" data-engine="${k}"${locked ? " disabled" : ""}>` +
+    `<span class="dot${state[k]?.connected ? " on" : ""}"></span>${NAMES[k]}</button>`).join("");
+  const s = state[engine];
+  let html;
+  if (!s) html = `<span class="muted">확인하는 중…</span>`;
+  else if (!s.installed && s.installing) {
+    const p = s.progress || {};
+    if (p.step === "받는 중" && p.total) {
+      const pct = Math.floor(p.done / p.total * 100);
+      html = `<span class="bar"><span style="width:${pct}%"></span></span>` +
+        `<span>받는 중 ${Math.round(p.done / 1e6)} / ${Math.round(p.total / 1e6)}MB (${pct}%) · ` +
+        `${(p.done / 1e6 / Math.max(p.secs, 0.1)).toFixed(1)}MB/s</span>`;
+    } else {
+      html = `<span class="spin"></span><span>${p.step || "준비 중"}…</span>`;
+    }
+  }
+  else if (!s.installed) html = `<span class="muted">이 PC에 없습니다</span><button type="button" class="link blue" data-act="install">설치</button>`;
+  else if (s.pending) html = `<span class="spin"></span><span>브라우저에서 로그인을 마쳐 주세요</span>`;
+  else if (s.connected) html = `<span class="dot on"></span><span class="acct">${esc(s.account || ACCOUNT[engine])}</span>` +
+    `<button type="button" class="link" data-act="disconnect">연결 해제</button>`;
+  else html = `<span class="muted">연결 안 됨</span><button type="button" class="link blue" data-act="connect">연결</button>`;
+  $("account").innerHTML = html;
+}
+
+function applyStatus(next) {
+  state = next;
+  if (firstStatus && !started() && !state[engine]?.connected) {   // 처음엔 연결된 쪽을 골라 둔다
+    const other = Object.keys(NAMES).find((k) => state[k]?.connected);
+    if (other) engine = other;
+  }
+  firstStatus = false;
+  if (connecting && !state[connecting]?.pending) {
+    if (state[connecting]?.connected) { if (!started()) engine = connecting; toast(`${NAMES[connecting]} 연결했습니다`); }
+    else toast("로그인하지 않아 연결되지 않았습니다");
+    connecting = null;
+  }
+  if (installing && !state[installing]?.installing) {
+    if (state[installing]?.installed) { if (!started()) engine = installing; toast(`${NAMES[installing]} 설치했습니다. [연결]을 눌러 로그인하세요`); }
+    else showCallout(state[installing]?.progress?.error || "설치가 끝나지 않았습니다. 다시 눌러 주세요.");
+    installing = null;
+  }
+  renderEngines();
+  clearTimeout(pollTimer);
+  const all = Object.values(state);
+  if (all.some((s) => s.installing)) pollTimer = setTimeout(refresh, 1000);
+  else if (all.some((s) => s.pending)) pollTimer = setTimeout(refresh, 2000);
+}
+const refresh = () => api("/api/status").then(applyStatus).catch((e) => showCallout(e.message));
+
+/* ── 알림·확인 창 ── */
+function showCallout(text) { $("callout-text").textContent = text; $("callout").hidden = false; }
+function hideCallout() { $("callout").hidden = true; }
+function toast(text) {
+  const el = $("toast");
+  el.textContent = text;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 3500);
+}
+function ask(text, okLabel, danger = false) {
+  return new Promise((resolve) => {
+    const bg = $("modal"), ok = $("modal-ok"), cancel = $("modal-cancel");
+    $("modal-text").textContent = text;
+    ok.textContent = okLabel;
+    ok.className = danger ? "btn-danger" : "btn-ok";
+    bg.hidden = false;
+    ok.focus();
+    const done = (v) => {
+      bg.hidden = true;
+      ok.onclick = cancel.onclick = bg.onclick = document.onkeydown = null;
+      resolve(v);
+    };
+    ok.onclick = () => done(true);
+    cancel.onclick = () => done(false);
+    bg.onclick = (e) => { if (e.target === bg) done(false); };
+    document.onkeydown = (e) => { if (e.key === "Escape") done(false); };
+  });
+}
+
+/* ── 프롬프트 ── */
+function renderPrompts() {
+  const list = $("prompts");
+  if (!data.prompts.length) { list.innerHTML = `<li class="side-empty">아직 없습니다. + 로 추가하세요</li>`; return; }
+  list.innerHTML = data.prompts.map((p, i) =>
+    `<li><button type="button" class="p-item" data-use="${i}" title="${esc(p.body)}">${esc(p.title)}</button>` +
+    `<button type="button" class="p-more" data-edit="${i}" aria-label="${esc(p.title)} 고치기">⋯</button></li>`).join("");
+}
+function openPrompt(i) {
+  editing = i;
+  const p = data.prompts[i] || { title: "", body: inputEl.value.trim() };   // 새 프롬프트는 지금 입력 칸 글로 시작
+  $("p-title").value = p.title;
+  $("p-body").value = p.body;
+  $("p-delete").hidden = i < 0;
+  $("pmodal").hidden = false;
+  $("p-title").focus();
+}
+async function savePrompts(prompts) {
+  try { data = await api("/api/prompts", { prompts }); renderPrompts(); return true; }
+  catch (e) { showCallout(e.message); return false; }
+}
+$("prompts").addEventListener("click", (e) => {
+  const use = e.target.closest("[data-use]"), edit = e.target.closest("[data-edit]");
+  if (use) {
+    const body = data.prompts[+use.dataset.use].body;
+    inputEl.value = inputEl.value.trim() ? `${inputEl.value.trimEnd()}\n\n${body}` : body;
+    grow();
+    inputEl.focus();
+    closeSidebar();
+  } else if (edit) {
+    openPrompt(+edit.dataset.edit);
+  }
+});
+$("add-prompt").addEventListener("click", () => openPrompt(-1));
+$("p-cancel").addEventListener("click", () => { $("pmodal").hidden = true; });
+$("pmodal").addEventListener("click", (e) => { if (e.target === $("pmodal")) $("pmodal").hidden = true; });
+$("p-save").addEventListener("click", async () => {
+  const title = $("p-title").value.trim(), body = $("p-body").value.trim();
+  if (!title) { $("p-title").focus(); return; }
+  const prompts = [...data.prompts];
+  if (editing < 0) prompts.push({ title, body }); else prompts[editing] = { title, body };
+  if (await savePrompts(prompts)) { $("pmodal").hidden = true; toast("프롬프트를 저장했습니다"); }
+});
+$("p-delete").addEventListener("click", async () => {
+  const p = data.prompts[editing];
+  $("pmodal").hidden = true;
+  if (!(await ask(`「${p.title}」 프롬프트를 삭제할까요?`, "삭제", true))) return;
+  if (await savePrompts(data.prompts.filter((_, i) => i !== editing))) toast("프롬프트를 삭제했습니다");
+});
+
+/* ── 작업 폴더 ── */
+async function setFolder(path, confirm = false) {
+  const f = await api("/api/folder", { path, confirm });
+  folderEl.value = f.folder;
+  data.folder = f.folder;
+  return f;
+}
+folderEl.addEventListener("change", () => {
+  hideCallout();
+  if (folderEl.value.trim()) setFolder(folderEl.value).catch((e) => showCallout(e.message));
+});
+$("pick").addEventListener("click", async () => {
+  hideCallout();
+  try {
+    const r = await api("/api/pick-folder", {});
+    if (r.path) { await setFolder(r.path); toast("작업 폴더를 정했습니다"); }
+  } catch (e) { showCallout(e.message); }
+});
+
+/* ── 대화 ── */
+function renderThread() {
+  const thread = $("thread");
+  if (!started()) {
+    thread.innerHTML = `<div class="empty">작업 폴더를 고르고, 아래 입력 칸에 시킬 일을 적어 보세요.<br>` +
+      `프롬프트 목록에서 하나를 누르면 자주 쓰는 말이 입력 칸에 들어갑니다.</div>`;
+    return;
+  }
+  const nearBottom = innerHeight + scrollY >= document.body.scrollHeight - 80;
+  thread.innerHTML = chat.messages.map((m, i) => {
+    if (m.role === "user") return `<div class="msg-user">${esc(m.text)}</div>`;
+    const last = i === chat.messages.length - 1, working = last && chat.running;
+    const acts = m.activity.length ? `<div class="acts">${m.activity.map((a) => {
+      const cls = CHANGE.includes(a.kind) ? " change" : ["막힘", "오류"].includes(a.kind) ? " bad" : "";
+      return `<div class="act"><span class="k${cls}">${esc(a.kind)}</span><span class="t" title="${esc(a.text)}">${esc(a.text)}</span></div>`;
+    }).join("")}</div>` : "";
+    return `<div class="msg-ai">` +
+      `<div class="who"><img src="/icon.png" alt="">${NAMES[m.engine] || "AI"}</div>` + acts +
+      (m.text ? `<div class="md">${markdown(m.text)}</div>` : "") +
+      (m.error ? `<div class="err">${esc(m.error)}</div>` : "") +
+      (working ? `<div class="working"><span class="spin"></span>작업하는 중… ${Math.round(chat.secs || 0)}초</div>` : "") +
+      (!working && m.text ? `<div class="msg-tools"><button type="button" class="link" data-copy="${i}">복사</button></div>` : "") +
+      `</div>`;
+  }).join("");
+  if (nearBottom) scrollTo(0, document.body.scrollHeight);
+}
+function renderLock() {
+  const locked = started();
+  folderEl.disabled = locked;
+  $("pick").disabled = locked;
+  $("lock-note").hidden = !locked;
+  const send = $("send");
+  send.textContent = chat.running ? "중지" : "보내기";
+  send.className = `btn ${chat.running ? "btn-stop" : "btn-primary"}`;
+  const first = chat.messages.find((m) => m.role === "user");
+  $("crumb").textContent = first ? first.text.slice(0, 40) : "새 대화";
+  renderEngines();
+}
+async function pollChat() {
+  clearTimeout(chatTimer);
+  try { chat = await api(`/api/chat?id=${chatId}`); } catch (e) { showCallout(e.message); return; }
+  renderThread();
+  renderLock();
+  if (chat.running) chatTimer = setTimeout(pollChat, 1000);
+}
+
+async function send() {
+  if (chat.running) {   // 중지
+    await api("/api/stop", { chat: chatId }).catch((e) => showCallout(e.message));
+    return pollChat();
+  }
+  const text = inputEl.value.trim();
+  if (!text) { inputEl.focus(); return; }
+  hideCallout();
+  if (!started()) {
+    if (!folderEl.value.trim()) { showCallout("작업 폴더를 먼저 골라 주세요."); return; }
+    if (!state[engine]?.connected) { showCallout(`${NAMES[engine]}에 연결돼 있지 않습니다. 계정 줄의 [연결]을 눌러 주세요.`); return; }
+    try {
+      const f = await setFolder(folderEl.value);
+      if (!f.confirmed) {   // 폴더마다 처음 한 번만 묻는다
+        const ok = await ask(`${f.folder}\n\n이 폴더의 파일과 엑셀이 AI 작업으로 변경될 수 있습니다. 괜찮으신가요?\n중요한 파일은 따로 백업해 두길 권장합니다.`, "진행");
+        if (!ok) return;
+        await setFolder(f.folder, true);
+      }
+    } catch (e) { showCallout(e.message); return; }
+  }
+  try {
+    chat = await api("/api/send", { chat: chatId, engine, folder: folderEl.value, text });
+  } catch (e) { showCallout(e.message); return; }
+  inputEl.value = "";
+  grow();
+  renderThread();
+  renderLock();
+  scrollTo(0, document.body.scrollHeight);
+  pollChat();
+}
+
+function grow() {
+  inputEl.style.height = "auto";
+  inputEl.style.height = Math.min(inputEl.scrollHeight, 220) + "px";
+  inputEl.style.overflowY = inputEl.scrollHeight > 220 ? "auto" : "hidden";   // 길어질 때만 스크롤
+}
+function closeSidebar() { $("sidebar").classList.remove("open"); $("scrim").hidden = true; }
+
+$("send").addEventListener("click", send);
+inputEl.addEventListener("input", grow);
+inputEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
+});
+$("thread").addEventListener("click", (e) => {
+  const copy = e.target.closest("[data-copy]");
+  if (copy) navigator.clipboard.writeText(chat.messages[+copy.dataset.copy].text).then(() => toast("복사했습니다"));
+});
+$("new").addEventListener("click", async () => {
+  if (chat.running) {
+    if (!(await ask("AI가 아직 작업 중입니다. 멈추고 새 대화를 시작할까요?", "멈추고 새 대화", true))) return;
+    await api("/api/stop", { chat: chatId }).catch(() => {});
+  }
+  clearTimeout(chatTimer);
+  chatId = crypto.randomUUID();
+  chat = { messages: [], running: false };
+  hideCallout();
+  renderThread();
+  renderLock();
+  inputEl.focus();
+});
+$("engines").addEventListener("click", (e) => {
+  const tag = e.target.closest(".tag");
+  if (!tag || tag.disabled) return;
+  engine = tag.dataset.engine;
+  hideCallout();
+  renderEngines();
+});
+$("account").addEventListener("click", async (e) => {
+  const act = e.target.closest("[data-act]")?.dataset.act;
+  if (!act) return;
+  const target = engine;
+  hideCallout();
+  try {
+    if (act === "connect") {
+      connecting = target;
+      state[target] = { ...state[target], pending: true };
+      renderEngines();
+      applyStatus(await api("/api/connect", { engine: target }));
+    } else if (act === "install") {
+      installing = target;
+      state[target] = { ...state[target], installing: true };
+      renderEngines();
+      applyStatus(await api("/api/install", { engine: target }));
+    } else {
+      if (!(await ask(`${NAMES[target]} 연결을 해제할까요?\n이 프로그램의 로그인만 풀리고 VS Code는 그대로입니다.`, "연결 해제", true))) return;
+      applyStatus(await api("/api/disconnect", { engine: target }));
+      toast(`${NAMES[target]} 연결을 해제했습니다`);
+    }
+  } catch (err) {
+    connecting = installing = null;
+    showCallout(err.message);
+    refresh();
+  }
+});
+$("menu").addEventListener("click", () => { $("sidebar").classList.add("open"); $("scrim").hidden = false; });
+$("scrim").addEventListener("click", closeSidebar);
+addEventListener("scroll", () => $("topbar").classList.toggle("scrolled", scrollY > 0), { passive: true });
+
+// 창이 살아 있다고 알린다 — 닫히면 프로그램도 끝난다
+api("/api/ping", {}).catch(() => {});
+setInterval(() => api("/api/ping", {}).catch(() => {}), 20000);
+addEventListener("pagehide", () => fetch("/api/bye", { method: "POST", keepalive: true, headers: { "X-Token": TOKEN } }));
+addEventListener("beforeunload", (e) => { if (chat.running) { e.preventDefault(); e.returnValue = ""; } });
+
+api("/api/data").then((d) => { data = d; folderEl.value = d.folder || ""; renderPrompts(); }).catch((e) => showCallout(e.message));
+renderThread();
+renderLock();
+refresh();
+inputEl.focus();
+</script>
+</body>
+</html>
