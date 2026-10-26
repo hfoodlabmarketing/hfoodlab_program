@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>회의 메모 정리</title>
+<link rel="icon" href="/icon.png">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<style>
+  /* 노션 페이지를 따른다 — 색은 노션 라이트/다크 값 */
+  :root {
+    color-scheme: light;
+    --bg: #ffffff;
+    --text: #37352f;
+    --text-2: #787774;
+    --text-3: #b4b4b0;
+    --line: #e9e9e7;
+    --hover: rgba(55, 53, 47, .06);
+    --press: rgba(55, 53, 47, .12);
+    --blue: #2383e2;
+    --blue-hover: #0077d4;
+    --ring: rgba(35, 131, 226, .45);
+    --green: #448361;
+    --red: #d44c47;
+    --tag-on-bg: #d3e5ef;
+    --tag-on-fg: #183347;
+    --tag-off-bg: #f1f1ef;
+    --tag-off-fg: #5a5955;
+    --callout-bg: #fdebec;
+    --callout-fg: #5d1715;
+    --toast-bg: #2f2f2f;
+    --toast-fg: #ffffff;
+    --panel: #ffffff;
+    --shadow: 0 0 0 1px rgba(15, 15, 15, .05), 0 3px 6px rgba(15, 15, 15, .1), 0 9px 24px rgba(15, 15, 15, .2);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #191919;
+      --text: #d4d4d4;
+      --text-2: #9b9b9b;
+      --text-3: #5f5f5f;
+      --line: #2f2f2f;
+      --hover: rgba(255, 255, 255, .055);
+      --press: rgba(255, 255, 255, .1);
+      --green: #529e72;
+      --red: #e16259;
+      --tag-on-bg: #28456c;
+      --tag-on-fg: #e1ecf7;
+      --tag-off-bg: #2f2f2f;
+      --tag-off-fg: #b4b4b4;
+      --callout-bg: #362422;
+      --callout-fg: #f0c8c5;
+      --toast-bg: #3f3f3f;
+      --toast-fg: #f1f1f1;
+      --panel: #252525;
+      --shadow: 0 0 0 1px rgba(15, 15, 15, .1), 0 3px 6px rgba(15, 15, 15, .2), 0 9px 24px rgba(15, 15, 15, .4);
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body {
+    font: 16px/1.5 "Pretendard Variable", Pretendard, ui-sans-serif, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; border: 0; background: none; padding: 0; }
+  button:disabled { cursor: default; }
+  :focus-visible { outline: none; box-shadow: 0 0 0 2px var(--ring); border-radius: 4px; }
+  .title:focus-visible, .memo:focus-visible, .prop-value input:focus-visible { box-shadow: none; }  /* 글 쓰는 칸은 커서로 충분하다 */
+  [hidden] { display: none !important; }
+
+  /* 상단 띠 */
+  .topbar {
+    position: sticky; top: 0; z-index: 10;
+    display: flex; align-items: center; gap: 8px;
+    height: 45px; padding: 0 12px; background: var(--bg);
+    transition: box-shadow .15s;
+  }
+  .topbar.scrolled { box-shadow: 0 1px 0 var(--line); }
+  .crumbs { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 14px; }
+  .crumbs img { width: 18px; height: 18px; flex: none; }
+  .crumbs .app { flex: none; }
+  .crumbs .sep { flex: none; color: var(--text-3); }
+  .crumbs .cur { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .actions { margin-left: auto; display: flex; gap: 4px; flex: none; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 28px; padding: 0 10px; border-radius: 6px;
+    font-size: 14px; white-space: nowrap;
+  }
+  .btn-ghost:hover:not(:disabled) { background: var(--hover); }
+  .btn-ghost:active:not(:disabled) { background: var(--press); }
+  .btn-ghost:disabled { opacity: .4; }
+  .btn-primary { background: var(--blue); color: #fff; font-weight: 500; }
+  .btn-primary:hover:not(:disabled) { background: var(--blue-hover); }
+  .btn-primary .spin { display: none; }
+  .btn-primary.busy { opacity: .85; }
+  .btn-primary.busy .spin { display: inline-block; }
+
+  /* 페이지 */
+  .page { max-width: 900px; margin: 0 auto; padding: 0 96px 160px; }
+  .page-icon { display: block; width: 78px; height: 78px; margin: 72px 0 10px; }
+  .title, .memo {
+    display: block; width: 100%; margin: 0; padding: 3px 2px;
+    border: 0; outline: 0; resize: none; overflow: hidden; background: none;
+  }
+  .title { font-size: 40px; line-height: 1.2; font-weight: 700; letter-spacing: -.01em; margin-bottom: 14px; }
+  .title::placeholder, .memo::placeholder { color: var(--text-3); }
+  .memo { min-height: 50vh; font-size: 16px; line-height: 1.65; }
+
+  /* 속성 줄 */
+  .prop { display: grid; grid-template-columns: 160px minmax(0, 1fr); align-items: start; }
+  .prop-name {
+    display: flex; align-items: center; gap: 6px;
+    height: 34px; padding: 0 6px; color: var(--text-2); font-size: 14px;
+  }
+  .prop-name svg { width: 16px; height: 16px; flex: none; }
+  .prop-value {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+    min-height: 34px; padding: 4px 8px; border-radius: 4px; font-size: 14px; min-width: 0;
+  }
+  .prop-value.editable:hover { background: var(--hover); }
+  .prop-value input { width: 100%; min-width: 0; padding: 0; border: 0; outline: 0; background: none; font-size: 14px; }
+  .tag {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 24px; padding: 0 8px; border-radius: 4px; font-size: 14px;
+    background: var(--tag-off-bg); color: var(--tag-off-fg);
+  }
+  .tag[aria-checked="true"] { background: var(--tag-on-bg); color: var(--tag-on-fg); font-weight: 500; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--text-3); }
+  .dot.on { background: var(--green); }
+  .muted { color: var(--text-2); }
+  .acct, .file { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .link { padding: 2px 6px; border-radius: 4px; font-size: 14px; color: var(--text-2); white-space: nowrap; }
+  .link:hover { background: var(--hover); }
+  .link.blue { color: var(--blue); }
+
+  .callout {
+    display: flex; gap: 10px; margin: 10px 0 0; padding: 14px 16px 14px 12px;
+    border-radius: 6px; background: var(--callout-bg); color: var(--callout-fg); font-size: 15px;
+  }
+  .callout svg { width: 20px; height: 20px; flex: none; margin-top: 1px; }
+  .divider { height: 1px; margin: 14px 0 18px; background: var(--line); }
+
+  .spin {
+    width: 14px; height: 14px; flex: none; border-radius: 50%;
+    border: 2px solid currentColor; border-right-color: transparent;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 24px; z-index: 30;
+    max-width: calc(100% - 32px); padding: 8px 14px; border-radius: 6px;
+    background: var(--toast-bg); color: var(--toast-fg); font-size: 14px; box-shadow: var(--shadow);
+    opacity: 0; transform: translate(-50%, 8px); pointer-events: none;
+    transition: opacity .16s, transform .16s;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  .modal-bg { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px; background: rgba(15, 15, 15, .6); }
+  .modal { width: min(340px, 100%); padding: 22px 20px 16px; border-radius: 10px; background: var(--panel); box-shadow: var(--shadow); text-align: center; }
+  .modal p { margin: 0 0 18px; font-size: 14px; line-height: 1.55; white-space: pre-line; }
+  .modal-actions { display: grid; gap: 8px; }
+  .modal-actions button { height: 32px; border-radius: 6px; font-size: 14px; }
+  .btn-danger { border: 1px solid rgba(235, 87, 87, .5); color: var(--red); }
+  .btn-danger:hover { background: rgba(235, 87, 87, .1); }
+  .modal-actions .btn-ghost { border: 1px solid var(--line); }
+
+  @media (max-width: 900px) { .page { padding: 0 48px 160px; } }
+  @media (max-width: 600px) {
+    .page { padding: 0 16px 120px; }
+    .page-icon { width: 56px; height: 56px; margin-top: 28px; }
+    .title { font-size: 30px; }
+    .prop { grid-template-columns: 104px minmax(0, 1fr); }
+    .prop-name { padding: 0 4px; }
+    .crumbs .app, .crumbs .sep { display: none; }
+    /* 휴대폰 폭에선 생성 버튼을 아래에 넓게 */
+    .actions .btn-primary {
+      position: fixed; left: 16px; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom));
+      height: 44px; justify-content: center; border-radius: 8px; font-size: 15px; box-shadow: var(--shadow);
+    }
+    .toast { bottom: calc(76px + env(safe-area-inset-bottom)); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .toast, .topbar { transition: none; }
+    .spin { animation-duration: 1.6s; }
+  }
+</style>
+</head>
+<body>
+<header class="topbar" id="topbar">
+  <div class="crumbs">
+    <img src="/icon.png" alt="">
+    <span class="app">회의 메모 정리</span>
+    <span class="sep">/</span>
+    <span class="cur" id="crumb">제목 없음</span>
+  </div>
+  <div class="actions">
+    <button type="button" class="btn btn-ghost" id="new">새 회의</button>
+    <button type="button" class="btn btn-primary" id="make"><span class="spin"></span><span class="label">회의 정리 파일 생성</span></button>
+  </div>
+</header>
+
+<main class="page">
+  <img class="page-icon" src="/icon.png" alt="">
+  <textarea class="title" id="title" rows="1" placeholder="회의 제목" aria-label="회의 제목"></textarea>
+
+  <div class="props">
+    <div class="prop">
+      <div class="prop-name">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="2"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3"/></svg>
+        일정
+      </div>
+      <label class="prop-value editable"><input type="datetime-local" id="when" aria-label="회의 일정"></label>
+    </div>
+    <div class="prop">
+      <div class="prop-name">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.5l1.5 5 5 1.5-5 1.5-1.5 5-1.5-5-5-1.5 5-1.5z"/></svg>
+        정리 도구
+      </div>
+      <div class="prop-value" id="engines" role="radiogroup" aria-label="정리 도구"></div>
+    </div>
+    <div class="prop">
+      <div class="prop-name">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="8" cy="5.5" r="2.8"/><path d="M2.5 14c.6-2.8 2.8-4.3 5.5-4.3s4.9 1.5 5.5 4.3"/></svg>
+        계정
+      </div>
+      <div class="prop-value" id="account"></div>
+    </div>
+    <div class="prop" id="file-row" hidden>
+      <div class="prop-name">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M4 1.5h5l3.5 3.5v9.5H4z"/><path d="M9 1.5V5h3.5"/></svg>
+        파일
+      </div>
+      <div class="prop-value"><span class="file" id="file-name"></span><button type="button" class="link" id="open">파일 위치 열기</button></div>
+    </div>
+  </div>
+
+  <div class="callout" id="callout" role="alert" hidden>
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="10" cy="10" r="8"/><path d="M10 6v5M10 13.6v.4"/></svg>
+    <div id="callout-text"></div>
+  </div>
+  <div class="divider"></div>
+  <textarea class="memo" id="memo" placeholder="회의 내용을 적으세요" aria-label="회의 메모"></textarea>
+</main>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="modal-bg" id="modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-text">
+    <p id="modal-text"></p>
+    <div class="modal-actions">
+      <button type="button" class="btn-danger" id="modal-ok"></button>
+      <button type="button" class="btn-ghost" id="modal-cancel">취소</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const TOKEN = "__TOKEN__";
+const NAMES = { codex: "GPT-6.1-Sol", claude: "Claude Opus 5.5" };
+const ACCOUNT = { codex: "ChatGPT 계정", claude: "Claude 계정" };
+const $ = (id) => document.getElementById(id);
+const titleEl = $("title"), memoEl = $("memo"), whenEl = $("when");
+
+let state = {};                  // 도구마다 {installed, connected, account, pending}
+let engine = "codex";
+let connecting = null;           // [연결] 을 누르고 로그인을 기다리는 도구
+let installing = null;           // [설치] 를 누르고 설치를 기다리는 도구
+let mid = crypto.randomUUID();   // 회의 하나 — 같은 회의는 같은 파일을 덮는다
+let summarized = null;           // 마지막으로 정리 파일을 만든 메모
+let busy = false, firstStatus = true, pollTimer = 0, toastTimer = 0;
+
+async function api(path, body) {
+  let res;
+  try {
+    res = await fetch(path, {
+      method: body === undefined ? "GET" : "POST",
+      headers: { "X-Token": TOKEN, "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch {
+    throw new Error("프로그램이 꺼져 있습니다. 바탕화면 바로가기로 다시 켜 주세요.");
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `오류 ${res.status}`);
+  return data;
+}
+
+const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const unsaved = () => memoEl.value.trim() !== "" && memoEl.value.trim() !== summarized;
+
+function render() {
+  $("engines").innerHTML = Object.keys(NAMES).map((k) =>
+    `<button type="button" class="tag" role="radio" aria-checked="${k === engine}" data-engine="${k}">` +
+    `<span class="dot${state[k]?.connected ? " on" : ""}"></span>${NAMES[k]}</button>`).join("");
+  const s = state[engine];
+  let html;
+  if (!s) html = `<span class="muted">확인하는 중…</span>`;
+  else if (!s.installed && s.installing) html = `<span class="spin"></span><span>설치 창에서 설치를 마쳐 주세요</span>`;
+  else if (!s.installed) html = `<span class="muted">이 PC에 없습니다</span><button type="button" class="link blue" data-act="install">설치</button>`;
+  else if (s.pending) html = `<span class="spin"></span><span>브라우저에서 로그인을 마쳐 주세요</span>`;
+  else if (s.connected) html = `<span class="dot on"></span><span class="acct">${esc(s.account || ACCOUNT[engine])}</span>` +
+    `<button type="button" class="link" data-act="disconnect">연결 해제</button>`;
+  else html = `<span class="muted">연결 안 됨</span><button type="button" class="link blue" data-act="connect">연결</button>`;
+  $("account").innerHTML = html;
+}
+
+function applyStatus(next) {
+  state = next;
+  if (firstStatus && !state[engine]?.connected) {   // 처음엔 연결된 쪽을 골라 둔다
+    const other = Object.keys(NAMES).find((k) => state[k]?.connected);
+    if (other) engine = other;
+  }
+  firstStatus = false;
+  if (connecting && !state[connecting]?.pending) {
+    if (state[connecting]?.connected) { engine = connecting; toast(`${NAMES[connecting]} 연결했습니다`); }
+    else toast("로그인하지 않아 연결되지 않았습니다");
+    connecting = null;
+  }
+  if (installing && !state[installing]?.installing) {
+    if (state[installing]?.installed) { engine = installing; toast(`${NAMES[installing]} 설치했습니다. [연결]을 눌러 로그인하세요`); }
+    else toast("설치가 끝나지 않았습니다. 설치 창의 안내를 확인해 주세요");
+    installing = null;
+  }
+  render();
+  clearTimeout(pollTimer);
+  if (Object.values(state).some((s) => s.pending || s.installing)) pollTimer = setTimeout(refresh, 2000);
+}
+const refresh = () => api("/api/status").then(applyStatus).catch((e) => showCallout(e.message));
+
+function showCallout(text) { $("callout-text").textContent = text; $("callout").hidden = false; }
+function hideCallout() { $("callout").hidden = true; }
+function toast(text) {
+  const el = $("toast");
+  el.textContent = text;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 3500);
+}
+function ask(text, okLabel) {
+  return new Promise((resolve) => {
+    const bg = $("modal"), ok = $("modal-ok"), cancel = $("modal-cancel");
+    $("modal-text").textContent = text;
+    ok.textContent = okLabel;
+    bg.hidden = false;
+    ok.focus();
+    const done = (v) => {
+      bg.hidden = true;
+      ok.onclick = cancel.onclick = bg.onclick = document.onkeydown = null;
+      resolve(v);
+    };
+    ok.onclick = () => done(true);
+    cancel.onclick = () => done(false);
+    bg.onclick = (e) => { if (e.target === bg) done(false); };
+    document.onkeydown = (e) => { if (e.key === "Escape") done(false); };
+  });
+}
+
+function grow(el) { el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; }
+function syncTitle() {
+  const t = titleEl.value.trim();
+  $("crumb").textContent = t || "제목 없음";
+  document.title = t ? `${t} - 회의 메모 정리` : "회의 메모 정리";
+  grow(titleEl);
+}
+function nowLocal() {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16);
+}
+function setBusy(on) {
+  busy = on;
+  const b = $("make");
+  b.disabled = on;
+  b.classList.toggle("busy", on);
+  b.querySelector(".label").textContent = on ? "정리하는 중…" : "회의 정리 파일 생성";
+  $("new").disabled = on;
+}
+
+async function generate() {
+  const memo = memoEl.value.trim();
+  hideCallout();
+  if (!memo) { showCallout("회의 메모가 비어 있습니다. 내용을 적은 뒤 다시 눌러 주세요."); memoEl.focus(); return; }
+  if (!state[engine]?.connected) { showCallout(`${NAMES[engine]}에 연결돼 있지 않습니다. 계정 줄의 [연결]을 눌러 주세요.`); return; }
+  setBusy(true);
+  try {
+    const r = await api("/api/generate", { engine, mid, title: titleEl.value, when: whenEl.value.replace("T", " "), memo });
+    summarized = memo;
+    $("file-name").textContent = r.name;
+    $("file-row").hidden = false;
+    toast(`${r.at} 바탕화면에 저장했습니다`);
+  } catch (err) {
+    showCallout(`정리하지 못했습니다. ${err.message}`);
+  } finally {
+    setBusy(false);
+  }
+}
+
+$("make").addEventListener("click", generate);
+$("open").addEventListener("click", () => api("/api/open", { mid }).catch((e) => showCallout(e.message)));
+$("new").addEventListener("click", async () => {
+  if (unsaved() && !(await ask("정리 파일을 만들지 않은 메모가 있습니다.\n비우고 새 회의를 시작할까요?", "비우기"))) return;
+  titleEl.value = "";
+  memoEl.value = "";
+  whenEl.value = nowLocal();
+  mid = crypto.randomUUID();
+  summarized = null;
+  $("file-row").hidden = true;
+  hideCallout();
+  syncTitle();
+  grow(memoEl);
+  titleEl.focus();
+});
+$("engines").addEventListener("click", (e) => {
+  const tag = e.target.closest(".tag");
+  if (!tag) return;
+  engine = tag.dataset.engine;
+  hideCallout();
+  render();
+});
+$("account").addEventListener("click", async (e) => {
+  const act = e.target.closest("[data-act]")?.dataset.act;
+  if (!act) return;
+  const target = engine;
+  hideCallout();
+  try {
+    if (act === "connect") {
+      connecting = target;
+      state[target] = { ...state[target], pending: true };
+      render();
+      applyStatus(await api("/api/connect", { engine: target }));
+    } else if (act === "install") {
+      installing = target;
+      state[target] = { ...state[target], installing: true };
+      render();
+      applyStatus(await api("/api/install", { engine: target }));
+    } else {
+      if (!(await ask(`${NAMES[target]} 연결을 해제할까요?\n이 프로그램의 로그인만 풀리고 VS Code는 그대로입니다.`, "연결 해제"))) return;
+      applyStatus(await api("/api/disconnect", { engine: target }));
+      toast(`${NAMES[target]} 연결을 해제했습니다`);
+    }
+  } catch (err) {
+    connecting = installing = null;
+    showCallout(err.message);
+    refresh();
+  }
+});
+
+titleEl.addEventListener("input", syncTitle);
+titleEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); memoEl.focus(); }
+});
+memoEl.addEventListener("input", () => grow(memoEl));
+addEventListener("resize", () => { grow(titleEl); grow(memoEl); });
+addEventListener("scroll", () => $("topbar").classList.toggle("scrolled", scrollY > 0), { passive: true });
+
+// 창이 살아 있다고 알린다 — 닫히면 프로그램도 끝난다
+api("/api/ping", {}).catch(() => {});
+setInterval(() => api("/api/ping", {}).catch(() => {}), 20000);
+addEventListener("pagehide", () => fetch("/api/bye", { method: "POST", keepalive: true, headers: { "X-Token": TOKEN } }));
+addEventListener("beforeunload", (e) => { if (unsaved() || busy) { e.preventDefault(); e.returnValue = ""; } });
+
+whenEl.value = nowLocal();
+syncTitle();
+grow(memoEl);
+render();
+refresh();
+titleEl.focus();
+</script>
+</body>
+</html>
