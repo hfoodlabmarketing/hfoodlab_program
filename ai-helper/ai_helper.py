@@ -57,12 +57,14 @@ SEED_PROMPTS = [
 
 # 폴더 선택 창은 이 프로그램 창(AH_OWNER)에 딸린 창으로 띄운다 — 그냥 띄우면 뒤에서 도는 서버가 띄운 창이라
 # 맨 앞으로 못 나오고 프로그램 창 뒤에 숨는다(2026-10-26 실측). 딸린 창은 언제나 주인 창 위에 뜬다.
+# ★ 끝나기 전에 ReleaseHandle() 로 놓는다 — 붙잡은 채로 PowerShell 이 끝나면 .NET 이 그 창에 닫기를 보내
+#   프로그램 창이 통째로 닫힌다(실측: 폴더를 고르고 [확인]을 누르면 앱이 꺼졌다).
 PICK_FOLDER = ("[Console]::OutputEncoding = [Text.Encoding]::UTF8; Add-Type -AssemblyName System.Windows.Forms; "
                "$o = New-Object System.Windows.Forms.NativeWindow; "
                "if ($env:AH_OWNER) { $o.AssignHandle([IntPtr][long]$env:AH_OWNER) }; "
                "$d = New-Object System.Windows.Forms.FolderBrowserDialog -Property @{"
                "Description = 'AI 가 작업할 폴더를 고르세요'; ShowNewFolderButton = $true; SelectedPath = $env:AH_START}; "
-               "if ($d.ShowDialog($o) -eq 'OK') { $d.SelectedPath }")
+               "$r = $d.ShowDialog($o); $o.ReleaseHandle(); if ($r -eq 'OK') { $d.SelectedPath }")
 TITLE = "AI 작업 도우미"  # index.html 의 <title> — Edge 앱 창 제목이 된다
 
 
