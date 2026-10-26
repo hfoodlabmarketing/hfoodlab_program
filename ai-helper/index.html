@@ -223,6 +223,8 @@
   }
   .composer-hint { margin: 6px 4px 0; color: var(--text-3); font-size: 12px; }
   .composer textarea::placeholder { color: var(--text-3); }
+  .composer:has(textarea:disabled) { background: var(--side-bg); box-shadow: none; }
+  .composer textarea:disabled { cursor: not-allowed; }
   .composer .btn { height: 32px; padding: 0 14px; }
 
   .spin {
@@ -330,6 +332,13 @@
             <input id="folder" placeholder="폴더 경로를 붙여 넣거나 [찾아보기]" aria-label="작업 폴더" spellcheck="false">
             <button type="button" class="link blue" id="pick">찾아보기</button>
           </div>
+        </div>
+        <div class="prop">
+          <div class="prop-name">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>
+            권한
+          </div>
+          <div class="prop-value" id="perm"></div>
         </div>
         <div class="prop">
           <div class="prop-name">
@@ -566,16 +575,39 @@ $("p-delete").addEventListener("click", async () => {
   if (await savePrompts(data.prompts.filter((_, i) => i !== editing))) toast("프롬프트를 삭제했습니다");
 });
 
-/* ── 작업 폴더 ── */
+/* ── 작업 폴더·권한 ── */
+const approved = () => !!data.folder && data.confirmed.includes(data.folder);
+function renderPerm() {
+  const f = data.folder;
+  $("perm").innerHTML = !f ? `<span class="muted">작업 폴더를 먼저 고르세요</span>`
+    : approved() ? `<span class="dot on"></span><span>승인됨 · 이 폴더의 파일 쓰기와 python 실행을 허용했습니다</span>`
+    : `<button type="button" class="btn btn-primary" id="approve">권한 승인</button>` +
+      `<span class="muted">이 폴더의 파일 쓰기와 python 실행을 허용해야 일을 시킬 수 있습니다</span>`;
+  const ready = started() || approved();   // 대화 중이면 이미 승인한 폴더다
+  inputEl.disabled = !ready;
+  inputEl.placeholder = ready ? "AI에게 시킬 일을 적으세요" : !f ? "작업 폴더를 먼저 골라 주세요" : "먼저 [권한 승인]을 눌러 주세요";
+  if (!chat.running) $("send").disabled = !ready;
+}
 async function setFolder(path, confirm = false) {
   const f = await api("/api/folder", { path, confirm });
   folderEl.value = f.folder;
   data.folder = f.folder;
+  if (f.confirmed && !data.confirmed.includes(f.folder)) data.confirmed.push(f.folder);
+  renderPerm();
   return f;
 }
 folderEl.addEventListener("change", () => {
   hideCallout();
   if (folderEl.value.trim()) setFolder(folderEl.value).catch((e) => showCallout(e.message));
+});
+$("perm").addEventListener("click", async (e) => {
+  if (!e.target.closest("#approve")) return;
+  hideCallout();
+  const ok = await ask(`${data.folder}\n\n이 폴더의 파일과 엑셀이 AI 작업으로 변경될 수 있습니다. 괜찮으신가요?\n` +
+    `중요한 파일은 따로 백업해 두길 권장합니다.`, "승인");
+  if (!ok) return;
+  try { await setFolder(data.folder, true); toast("권한을 승인했습니다"); inputEl.focus(); }
+  catch (err) { showCallout(err.message); }
 });
 $("pick").addEventListener("click", async () => {
   hideCallout();
@@ -622,6 +654,7 @@ function renderLock() {
   const first = chat.messages.find((m) => m.role === "user");
   $("crumb").textContent = first ? first.text.slice(0, 40) : "새 대화";
   renderEngines();
+  renderPerm();
 }
 async function pollChat() {
   clearTimeout(chatTimer);
@@ -640,16 +673,8 @@ async function send() {
   if (!text) { inputEl.focus(); return; }
   hideCallout();
   if (!started()) {
-    if (!folderEl.value.trim()) { showCallout("작업 폴더를 먼저 골라 주세요."); return; }
+    if (!approved()) { showCallout("작업 폴더를 고르고 [권한 승인]을 먼저 눌러 주세요."); return; }
     if (!state[engine]?.connected) { showCallout(`${NAMES[engine]}에 연결돼 있지 않습니다. 계정 줄의 [연결]을 눌러 주세요.`); return; }
-    try {
-      const f = await setFolder(folderEl.value);
-      if (!f.confirmed) {   // 폴더마다 처음 한 번만 묻는다
-        const ok = await ask(`${f.folder}\n\n이 폴더의 파일과 엑셀이 AI 작업으로 변경될 수 있습니다. 괜찮으신가요?\n중요한 파일은 따로 백업해 두길 권장합니다.`, "진행");
-        if (!ok) return;
-        await setFolder(f.folder, true);
-      }
-    } catch (e) { showCallout(e.message); return; }
   }
   try {
     chat = await api("/api/send", { chat: chatId, engine, folder: folderEl.value, text });
@@ -735,7 +760,7 @@ setInterval(() => api("/api/ping", {}).catch(() => {}), 20000);
 addEventListener("pagehide", () => fetch("/api/bye", { method: "POST", keepalive: true, headers: { "X-Token": TOKEN } }));
 addEventListener("beforeunload", (e) => { if (chat.running) { e.preventDefault(); e.returnValue = ""; } });
 
-api("/api/data").then((d) => { data = d; folderEl.value = d.folder || ""; renderPrompts(); }).catch((e) => showCallout(e.message));
+api("/api/data").then((d) => { data = d; folderEl.value = d.folder || ""; renderPrompts(); renderPerm(); }).catch((e) => showCallout(e.message));
 renderThread();
 renderLock();
 refresh();

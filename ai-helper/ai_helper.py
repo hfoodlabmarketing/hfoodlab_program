@@ -1,7 +1,8 @@
 """AI 작업 도우미 — 비개발자가 작업 폴더를 고르고, GPT(Codex) 나 Claude(Claude Code)에게 말로 일을 시키는 프로그램.
 
 - 화면은 index.html(노션 모양 · 반응형). 내 PC 안에서만 열리는 서버(127.0.0.1)를 띄우고 Edge 앱 창으로 연다.
-- AI 는 고른 폴더 안의 파일(엑셀 포함)을 읽고 고친다. 폴더마다 처음 한 번 "바뀔 수 있다 · 백업 권장" 확인을 받는다.
+- AI 는 고른 폴더 안의 파일(엑셀 포함)을 읽고 고친다. 폴더마다 [권한 승인]("바뀔 수 있다 · 백업 권장")을 받아야
+  입력 칸이 열린다.
   · Codex: 윈도우 샌드박스(workspace-write)로 폴더 밖 쓰기가 막힌다(2026-10-26 실측)
   · Claude Code: 윈도우엔 샌드박스가 없다 — 파일 고치기는 폴더 안만 자동 허용, 명령은 `python` 만 허용한다
   · 엑셀은 python + openpyxl 로 고친다. 배포판엔 둘 다 들어 있다(build.py)
@@ -14,6 +15,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import secrets
 import shutil
 import subprocess
@@ -282,8 +284,11 @@ def agent_env(engine):
 
 
 def codex_args(chat, out):
+    # windows.sandbox 가 없으면 윈도우에선 workspace-write 를 줘도 read-only 로 돈다(2026-10-26 실측 — 사용자가
+    # "읽기 전용이라 못 만든다"는 답을 받았다). unelevated = 관리자 권한 없이 도는 제한 토큰 샌드박스.
     common = ["--json", "-m", MODELS["codex"], "--skip-git-repo-check", "-o", str(out),
-              "-c", 'sandbox_mode="workspace-write"', "-c", 'approval_policy="never"']
+              "-c", 'sandbox_mode="workspace-write"', "-c", 'windows.sandbox="unelevated"',
+              "-c", 'approval_policy="never"']
     if chat["session"]:
         return ["exec", "resume", *common, chat["session"], "-"]
     return ["exec", *common, "-C", chat["folder"], "-"]
@@ -326,6 +331,22 @@ def claude_event(ev, msg, chat):
             msg["error"] = ev.get("result") or "답을 받지 못했습니다."
 
 
+def command_label(cmd):
+    # Codex 는 명령을 "…powershell.exe" -Command '…' 로 감싸서 준다 — 껍데기를 벗겨 쉬운 말로 보여 준다
+    inner = re.sub(r'^"?[^"]*powershell\.exe"?\s+-Command\s+', "", cmd, flags=re.IGNORECASE).strip("'\" ")
+    if "openpyxl" in inner:
+        return "엑셀 다루기(python)"
+    if "python" in inner or "from pathlib" in inner:
+        return "파일 다루기(python)"
+    if re.match(r"(Get-ChildItem|dir|ls)\b", inner, re.IGNORECASE):
+        return "파일 목록 보기"
+    if re.match(r"(Set-Content|Add-Content|Out-File|New-Item)\b", inner, re.IGNORECASE):
+        return "파일 쓰기"
+    if re.match(r"(Get-Content|type|cat)\b", inner, re.IGNORECASE):
+        return "파일 읽기"
+    return " ".join(inner.split())[:100]
+
+
 def codex_event(ev, msg, chat):
     kind, item = ev.get("type"), ev.get("item") or {}
     if kind == "thread.started":
@@ -335,7 +356,7 @@ def codex_event(ev, msg, chat):
         if it == "agent_message":
             msg["text"] = item.get("text", "")
         elif it == "command_execution":
-            msg["activity"].append({"kind": "실행", "text": item.get("command", "")[:120]})
+            msg["activity"].append({"kind": "실행", "text": command_label(item.get("command", ""))})
         elif it == "file_change":
             for c in item.get("changes", []):
                 label = {"add": "만듦", "delete": "지움"}.get(c.get("kind"), "고침")
